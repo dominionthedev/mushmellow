@@ -11,21 +11,9 @@ ci:
 
 mushmellows:
 
-  dev:
-    description: Development flow
-
+  test-timeout:
+    description: Test timeout behavior
     puffs:
-
-      - id: hello
-        type: message
-        text: Hello from Mushmellow!
-
-      - id: wait-a-bit
-        type: wait
-        duration: 1s
-
-      - id: check-go
-        run: go version
-
-      - id: list-files
-        run: ls -la
+      - id: slow-puff
+        run: sleep 5
+        timeout: 1s

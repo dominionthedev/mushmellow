@@ -48,6 +48,16 @@ func (e *ShellExecutor) ExecutePuff(ctx context.Context, puff config.Puff) Resul
 }
 
 func (e *ShellExecutor) runCommand(ctx context.Context, puff config.Puff, start time.Time) Result {
+	// Handle timeout
+	if puff.Timeout != "" {
+		duration, err := time.ParseDuration(puff.Timeout)
+		if err == nil {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, duration)
+			defer cancel()
+		}
+	}
+
 	cmd := exec.CommandContext(ctx, "sh", "-c", puff.Run)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -56,21 +66,25 @@ func (e *ShellExecutor) runCommand(ctx context.Context, puff config.Puff, start 
 		cmd.Dir = puff.Dir
 	}
 
-	// Merge env
+	// Env inheritance + merging
+	env := os.Environ()
 	if len(puff.Env) > 0 {
-		env := os.Environ()
 		for k, v := range puff.Env {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
-		cmd.Env = env
 	}
+	cmd.Env = env
 
 	if err := cmd.Run(); err != nil {
+		errorMessage := err.Error()
+		if ctx.Err() == context.DeadlineExceeded {
+			errorMessage = fmt.Sprintf("timed out after %s", puff.Timeout)
+		}
 		return Result{
 			ID:           puff.ID,
 			Success:      false,
 			Duration:     time.Since(start),
-			ErrorMessage: err.Error(),
+			ErrorMessage: errorMessage,
 		}
 	}
 

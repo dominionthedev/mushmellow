@@ -7,43 +7,103 @@ import (
 	"github.com/dominionthedev/mushmellow/internal/config"
 	"github.com/dominionthedev/mushmellow/internal/executor"
 	"github.com/dominionthedev/mushmellow/internal/ui"
+	"github.com/dominionthedev/mushmellow/internal/ci"
 )
 
 // Runner orchestrates the execution of a mushmellow
 type Runner struct {
 	cfg      *config.Config
 	executor *executor.ShellExecutor
+	mode     ci.Mode
+	dryRun   bool
 }
 
 // NewRunner creates a new Runner
-func NewRunner(cfg *config.Config) *Runner {
+func NewRunner(cfg *config.Config, mode ci.Mode) *Runner {
 	return &Runner{
 		cfg:      cfg,
 		executor: executor.NewShellExecutor(),
+		mode:     mode,
 	}
 }
 
+// SetDryRun enables or disables dry-run mode
+func (r *Runner) SetDryRun(dry bool) {
+	r.dryRun = dry
+}
+
+// Summary represents the outcome of a mushmellow execution
+type Summary struct {
+	Name    string
+	Results []executor.Result
+}
+
 // Run executes a named mushmellow
-func (r *Runner) Run(ctx context.Context, name string) error {
+func (r *Runner) Run(ctx context.Context, name string) (*Summary, error) {
 	m, ok := r.cfg.Mushmellows[name]
 	if !ok {
-		return fmt.Errorf("mushmellow '%s' not found", name)
+		return nil, fmt.Errorf("mushmellow '%s' not found", name)
 	}
 
-	fmt.Println(ui.BuildHeader(r.cfg.Name))
-	fmt.Printf("Workflow: %s\n\n", m.Description)
+	// Resolve execution order based on dependencies
+	resolver := NewResolver(m)
+	order, err := resolver.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve dependencies: %w", err)
+	}
 
-	for _, puff := range m.Puffs {
-		fmt.Println(ui.BuildRun(puff.ID))
+	if r.mode == ci.SoftMode {
+		fmt.Println(ui.BuildHeader(r.cfg.Name))
+		fmt.Printf("Workflow: %s\n\n", m.Description)
+	}
 
-		result := r.executor.ExecutePuff(ctx, puff)
-		if !result.Success {
-			fmt.Println(ui.BuildError(puff.ID, result.ErrorMessage))
-			return fmt.Errorf("puff '%s' failed", puff.ID)
+	summary := &Summary{Name: name}
+
+	for _, puff := range order {
+		// ... mergedEnv logic ...
+		mergedEnv := make(map[string]string)
+		for k, v := range r.cfg.Env {
+			mergedEnv[k] = v
+		}
+		for k, v := range m.Env {
+			mergedEnv[k] = v
+		}
+		for k, v := range puff.Env {
+			mergedEnv[k] = v
+		}
+		puff.Env = mergedEnv
+
+		if r.mode == ci.SoftMode {
+			fmt.Println(ui.BuildRun(puff.ID))
+		} else if r.mode == ci.CIMode {
+			fmt.Printf("==> Executing puff: %s\n", puff.ID)
 		}
 
-		fmt.Println(ui.BuildSuccess(puff.ID, result.Duration))
+		if r.dryRun {
+			if r.mode == ci.SoftMode {
+				fmt.Printf("    (dry-run: %s)\n", puff.Run)
+			}
+			continue
+		}
+
+		result := r.executor.ExecutePuff(ctx, puff)
+		summary.Results = append(summary.Results, result)
+
+		if !result.Success {
+			if r.mode == ci.SoftMode {
+				fmt.Println(ui.BuildError(puff.ID, result.ErrorMessage))
+			} else {
+				fmt.Printf("ERROR: puff '%s' failed: %s\n", puff.ID, result.ErrorMessage)
+			}
+			return summary, fmt.Errorf("puff '%s' failed", puff.ID)
+		}
+
+		if r.mode == ci.SoftMode {
+			fmt.Println(ui.BuildSuccess(puff.ID, result.Duration))
+		} else if r.mode == ci.CIMode {
+			fmt.Printf("==> Finished puff: %s (%s)\n", puff.ID, result.Duration)
+		}
 	}
 
-	return nil
+	return summary, nil
 }
