@@ -1,0 +1,15 @@
+version: 1
+name: Node Workflow
+
+mushmellows:
+  dev:
+    description: Node.js development flow
+    puffs:
+      - id: install
+        run: npm install
+      - id: lint
+        depends_on: [install]
+        run: npm run lint
+      - id: start
+        depends_on: [lint]
+        run: npm start

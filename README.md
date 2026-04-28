@@ -1,4 +1,14 @@
-# 🍡 Mushmellow
+<p align="center">
+  <img src="assets/logo.svg" alt="MushMellow Logo" width="800"/>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/dominionthedev/mushmellow?style=for-the-badge&color=A855F7" alt="Release"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/dominionthedev/mushmellow/test.yaml?style=for-the-badge&color=22D3EE" alt="Build Status"/>
+  <img src="https://img.shields.io/github/license/dominionthedev/mushmellow?style=for-the-badge&color=FF4FD8" alt="License"/>
+</p>
+
+---
 
 **Soft workflows. Hard execution.**
 
@@ -8,7 +18,8 @@ Mushmellow is a lightweight, stylish developer workflow runtime. It allows you t
 
 - **Readable**: YAML-based configuration that anyone can understand.
 - **Portable**: Run the same workflows locally and in CI.
-- **Aesthetic**: Styled output using Lipgloss for a "soft" developer experience.
+- **Composable**: Supports multi-file configurations via `*.mushmellow.yaml` discovery.
+- **Aesthetic**: Styled output using Lipgloss for a "soft" developer experience. ✨
 - **Smart**: Dependency-aware execution with a Directed Acyclic Graph (DAG).
 - **Local-first**: Designed for developers, by developers.
 
@@ -28,7 +39,9 @@ The atomic execution unit. A puff can run commands, display messages, or wait. P
 
 ## Quick Start
 
-Create a `mushmellow.yaml` in your project root:
+Mushmellow automatically discovers `mushmellow.yaml` or any `*.mushmellow.yaml` in your current directory.
+
+Create a `dev.mushmellow.yaml`:
 
 ```yaml
 version: 1
@@ -58,9 +71,26 @@ mushmellow run dev
 
 - `run <name>`: Execute a workflow.
 - `list`: List all available workflows.
+- `new <name>`: Scaffold a new workflow file.
+- `puff`: Manage puffs via CLI.
 - `doctor`: Validate your configuration.
 - `edit`: Open configuration in your default editor.
 
 ## License
 
-MIT
+This project is licensed under the MIT License.
+
+---
+
+<br/>
+
+<p align="center">
+DominionDev
+<a href="https://github.com/dominionthedev">GitHub</a> • <a href="https://dominionthedev.github.io">Website</a>
+</p>
+
+<p align="center">
+  <a href="https://dominionthedev.github.io">
+    <img src="https://raw.githubusercontent.com/dominionthedev/dominionthedev/main/assets/watermark.svg" alt="DominionDev" width="1024"/>
+  </a>
+</p>

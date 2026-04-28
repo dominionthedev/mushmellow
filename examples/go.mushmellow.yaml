@@ -1,0 +1,15 @@
+version: 1
+name: Go Workflow
+
+mushmellows:
+  build:
+    description: Standard Go build and test flow
+    puffs:
+      - id: lint
+        run: go vet ./...
+      - id: test
+        depends_on: [lint]
+        run: go test -v ./...
+      - id: compile
+        depends_on: [test]
+        run: go build -o bin/app .

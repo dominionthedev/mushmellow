@@ -1,0 +1,58 @@
+<svg width="1200" height="400" viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Metadata for signature -->
+  <metadata>built_by: dominionthedev</metadata>
+
+  <!-- Background (Transparent) -->
+  <rect width="1200" height="400" fill="transparent"/>
+
+  <!-- Splash Layer (Ink/Smoke Effect) -->
+  <g opacity="0.18">
+    <path d="M150,200 Q180,120 250,150 T400,180 T600,140 T800,200 T1000,160 T1100,250 Q1050,350 900,320 T700,300 T500,340 T300,310 T150,250 Z" fill="#1A1A2E"/>
+    <path d="M200,180 Q250,100 350,140 T550,160 T750,120 T950,180 T1050,140 Q1000,280 850,260 T650,240 T450,280 T250,250 T200,200 Z" fill="#0F172A"/>
+    <circle cx="200" cy="200" r="100" fill="#111827"/>
+    <circle cx="900" cy="250" r="80" fill="#111827"/>
+    <!-- Subtle Signature "D" in splash -->
+    <path d="M1100,350 L1100,370 Q1120,370 1120,360 Q1120,350 1100,350" fill="#22D3EE" opacity="0.05"/>
+  </g>
+
+  <!-- Gradient Definitions -->
+  <defs>
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="20%">
+      <stop offset="0%" stop-color="#FF4FD8"/>
+      <stop offset="40%" stop-color="#A855F7"/>
+      <stop offset="75%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+
+    <linearGradient id="taglineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF2E93"/>
+      <stop offset="50%" stop-color="#FF5CA8"/>
+      <stop offset="100%" stop-color="#FF8AC2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon -->
+  <text x="100" y="215" font-size="96" font-family="sans-serif">🍡</text>
+
+  <!-- Title -->
+  <text x="240" y="190"
+        font-family="Inter, system-ui, sans-serif"
+        font-size="84"
+        font-weight="700"
+        fill="url(#titleGrad)">
+    MushMellow
+  </text>
+
+  <!-- Tagline -->
+  <text x="245" y="245"
+        font-family="Inter, system-ui, sans-serif"
+        font-size="28"
+        font-weight="400"
+        fill="url(#taglineGrad)"
+        opacity="0.9">
+    Soft workflows. Hard execution.
+  </text>
+
+  <!-- Hidden pixel signature -->
+  <circle cx="1180" cy="380" r="1" fill="#22D3EE" opacity="0.02"/>
+</svg>
