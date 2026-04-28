@@ -8,7 +8,7 @@
   <a href="https://github.com/dominionthedev/mushmellow/releases">
     <img src="https://img.shields.io/github/v/release/dominionthedev/mushmellow?style=for-the-badge&color=A855F7" alt="Release"/>
   </a>
-  <a href="https//github.com/dominionthedev/mushmellow/actions">
+  <a href="https://github.com/dominionthedev/mushmellow/actions">
     <img src="https://img.shields.io/github/actions/workflow/status/dominionthedev/mushmellow/test.yaml?style=for-the-badge&color=22D3EE" alt="Build Status"/>
   </a>
   <a href="./LICENSE">
