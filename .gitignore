@@ -1,0 +1,11 @@
+# Binaries
+mushmellow
+bin/
+dist/
+
+# OS-specific
+.DS_Store
+
+# Go
+vendor/
+go.sum

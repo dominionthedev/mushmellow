@@ -1,0 +1,31 @@
+version: 1
+
+name: Mush Example
+
+env:
+  GOFLAGS: -mod=readonly
+
+ci:
+  compatible: true
+  output: junit
+
+mushmellows:
+
+  dev:
+    description: Development flow
+
+    puffs:
+
+      - id: hello
+        type: message
+        text: Hello from Mushmellow!
+
+      - id: wait-a-bit
+        type: wait
+        duration: 1s
+
+      - id: check-go
+        run: go version
+
+      - id: list-files
+        run: ls -la
