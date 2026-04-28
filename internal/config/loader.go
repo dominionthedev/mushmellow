@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -48,21 +49,91 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// LoadDefault searches for mushmellow.yaml in common locations
+// LoadDefault searches for and merges all discovered mushmellow configuration files
 func LoadDefault() (*Config, error) {
-	searchPaths := []string{
+	// Root configs to check first
+	roots := []string{
 		"mushmellow.yaml",
 		"mushmellow.yml",
 		".mushmellow.yaml",
 	}
 
-	for _, p := range searchPaths {
+	var rootCfg *Config
+
+	for _, p := range roots {
 		if _, err := os.Stat(p); err == nil {
-			return Load(p)
+			cfg, err := Load(p)
+			if err == nil {
+				rootCfg = cfg
+				break
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("mushmellow.yaml not found in current directory")
+	if rootCfg == nil {
+		// If no root config, check for any *.mushmellow.yaml
+		matches, _ := filepath.Glob("*.mushmellow.yaml")
+		if len(matches) == 0 {
+			return nil, fmt.Errorf("no mushmellow.yaml or *.mushmellow.yaml found")
+		}
+		
+		// Load first match as base if no root found
+		cfg, err := Load(matches[0])
+		if err != nil {
+			return nil, err
+		}
+		rootCfg = cfg
+		matches = matches[1:] // Remove first as it's already base
+
+		// Merge others
+		for _, m := range matches {
+			other, err := Load(m)
+			if err == nil {
+				mergeConfig(rootCfg, other)
+			}
+		}
+	} else {
+		// If root found, also look for and merge any *.mushmellow.yaml
+		matches, _ := filepath.Glob("*.mushmellow.yaml")
+		for _, m := range matches {
+			// Skip if it's one of our root files
+			isRoot := false
+			for _, r := range roots {
+				if m == r {
+					isRoot = true
+					break
+				}
+			}
+			if isRoot {
+				continue
+			}
+
+			other, err := Load(m)
+			if err == nil {
+				mergeConfig(rootCfg, other)
+			}
+		}
+	}
+
+	return rootCfg, nil
+}
+
+func mergeConfig(base, other *Config) {
+	if base.Mushmellows == nil {
+		base.Mushmellows = make(map[string]Mushmellow)
+	}
+	for name, m := range other.Mushmellows {
+		base.Mushmellows[name] = m
+	}
+	// Also merge global env if needed
+	if other.Env != nil {
+		if base.Env == nil {
+			base.Env = make(map[string]string)
+		}
+		for k, v := range other.Env {
+			base.Env[k] = v
+		}
+	}
 }
 
 // Validate checks the configuration for required fields and basic correctness
