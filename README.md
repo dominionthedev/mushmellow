@@ -25,8 +25,14 @@ Mushmellow is a lightweight, stylish developer workflow runtime. It allows you t
 
 ## Installation
 
+### From Source
 ```bash
 go build -o /usr/local/bin/mushmellow .
+```
+
+### Via Go
+```bash
+go install github.com/dominionthedev/mushmellow@latest
 ```
 
 ## Core Concepts

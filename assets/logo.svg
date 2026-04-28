@@ -1,58 +1,56 @@
 <svg width="1200" height="400" viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg">
-  <!-- Metadata for signature -->
-  <metadata>built_by: dominionthedev</metadata>
 
-  <!-- Background (Transparent) -->
-  <rect width="1200" height="400" fill="transparent"/>
+  <!-- Background -->
+  <rect width="1200" height="400" fill="#0B0B10"/>
 
-  <!-- Splash Layer (Ink/Smoke Effect) -->
+  <!-- Splash Layer -->
   <g opacity="0.18">
-    <path d="M150,200 Q180,120 250,150 T400,180 T600,140 T800,200 T1000,160 T1100,250 Q1050,350 900,320 T700,300 T500,340 T300,310 T150,250 Z" fill="#1A1A2E"/>
-    <path d="M200,180 Q250,100 350,140 T550,160 T750,120 T950,180 T1050,140 Q1000,280 850,260 T650,240 T450,280 T250,250 T200,200 Z" fill="#0F172A"/>
-    <circle cx="200" cy="200" r="100" fill="#111827"/>
-    <circle cx="900" cy="250" r="80" fill="#111827"/>
-    <!-- Subtle Signature "D" in splash -->
-    <path d="M1100,350 L1100,370 Q1120,370 1120,360 Q1120,350 1100,350" fill="#22D3EE" opacity="0.05"/>
+    <path d="M120,220 C180,120 260,120 320,220 C380,320 460,320 520,220 C580,120 660,120 720,220 C780,320 860,320 920,220"
+          fill="none" stroke="#1A1A2E" stroke-width="60" stroke-linecap="round"/>
+
+    <circle cx="300" cy="140" r="80" fill="#111827"/>
+    <circle cx="650" cy="260" r="110" fill="#0F172A"/>
+    <circle cx="900" cy="160" r="70" fill="#1F2937"/>
   </g>
 
-  <!-- Gradient Definitions -->
+  <!-- Icon -->
+  <text x="120" y="215" font-size="78">🍡</text>
+
+  <!-- Gradients -->
   <defs>
-    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="20%">
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#FF4FD8"/>
-      <stop offset="40%" stop-color="#A855F7"/>
-      <stop offset="75%" stop-color="#22D3EE"/>
+      <stop offset="35%" stop-color="#A855F7"/>
+      <stop offset="70%" stop-color="#22D3EE"/>
       <stop offset="100%" stop-color="#F8FAFC"/>
     </linearGradient>
 
-    <linearGradient id="taglineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="taglineGrad" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#FF2E93"/>
       <stop offset="50%" stop-color="#FF5CA8"/>
       <stop offset="100%" stop-color="#FF8AC2"/>
     </linearGradient>
   </defs>
 
-  <!-- Icon -->
-  <text x="100" y="215" font-size="96" font-family="sans-serif">🍡</text>
-
   <!-- Title -->
-  <text x="240" y="190"
-        font-family="Inter, system-ui, sans-serif"
-        font-size="84"
-        font-weight="700"
-        fill="url(#titleGrad)">
+  <text x="240" y="180"
+        font-size="64"
+        font-weight="600"
+        fill="url(#titleGrad)"
+        font-family="Inter, system-ui, sans-serif">
     MushMellow
   </text>
 
   <!-- Tagline -->
-  <text x="245" y="245"
-        font-family="Inter, system-ui, sans-serif"
-        font-size="28"
-        font-weight="400"
+  <text x="242" y="235"
+        font-size="20"
         fill="url(#taglineGrad)"
-        opacity="0.9">
+        opacity="0.92"
+        font-family="Inter, system-ui, sans-serif">
     Soft workflows. Hard execution.
   </text>
 
-  <!-- Hidden pixel signature -->
-  <circle cx="1180" cy="380" r="1" fill="#22D3EE" opacity="0.02"/>
+  <!-- Subtle signature dot -->
+  <circle cx="1160" cy="380" r="3" fill="#22D3EE" opacity="0.08"/>
+
 </svg>
