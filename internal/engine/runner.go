@@ -54,7 +54,7 @@ func (r *Runner) Run(ctx context.Context, name string) (*Summary, error) {
 
 	if r.mode == ci.SoftMode {
 		fmt.Println(ui.BuildHeader(r.cfg.Name))
-		fmt.Printf("Workflow: %s\n\n", m.Description)
+		fmt.Println(ui.BuildWorkflowInfo(m.Description))
 	}
 
 	summary := &Summary{Name: name}
@@ -74,7 +74,11 @@ func (r *Runner) Run(ctx context.Context, name string) (*Summary, error) {
 		puff.Env = mergedEnv
 
 		if r.mode == ci.SoftMode {
-			fmt.Println(ui.BuildRun(puff.ID))
+			if puff.Type == "message" {
+				fmt.Println(ui.BuildMessage(puff.Text))
+			} else {
+				fmt.Println(ui.BuildRun(puff.ID))
+			}
 		} else if r.mode == ci.CIMode {
 			fmt.Printf("==> Executing puff: %s\n", puff.ID)
 		}
@@ -93,7 +97,7 @@ func (r *Runner) Run(ctx context.Context, name string) (*Summary, error) {
 			if r.mode == ci.SoftMode {
 				fmt.Println(ui.BuildError(puff.ID, result.ErrorMessage))
 			} else {
-				fmt.Printf("ERROR: puff '%s' failed: %s\n", puff.ID, result.ErrorMessage)
+				fmt.Printf("%s puff '%s' failed: %s\n", ui.Icons.Error, puff.ID, result.ErrorMessage)
 			}
 			return summary, fmt.Errorf("puff '%s' failed", puff.ID)
 		}

@@ -23,25 +23,25 @@ func newDoctorCmd() *cobra.Command {
 			
 			cfg, err := config.LoadDefault()
 			if err != nil {
-				fmt.Printf("❌ Failed to load config: %v\n", err)
+				fmt.Printf("%s Failed to load config: %v\n", ui.Icons.Error, err)
 				os.Exit(1)
 			}
 
-			fmt.Println("✅ Config file found")
+			fmt.Printf("%s Config file found\n", ui.Icons.Success)
 
 			if err := cfg.Validate(); err != nil {
-				fmt.Printf("❌ Config validation failed: %v\n", err)
+				fmt.Printf("%s Config validation failed: %v\n", ui.Icons.Error, err)
 			} else {
-				fmt.Println("✅ Config schema is valid")
+				fmt.Printf("%s Config schema is valid\n", ui.Icons.Success)
 			}
 
 			for name, m := range cfg.Mushmellows {
 				resolver := engine.NewResolver(m)
 				_, err := resolver.Resolve()
 				if err != nil {
-					fmt.Printf("❌ Mushmellow '%s': %v\n", name, err)
+					fmt.Printf("%s Mushmellow '%s': %v\n", ui.Icons.Error, name, err)
 				} else {
-					fmt.Printf("✅ Mushmellow '%s' dependency graph is healthy\n", name)
+					fmt.Printf("%s Mushmellow '%s' dependency graph is healthy\n", ui.Icons.Success, name)
 				}
 			}
 

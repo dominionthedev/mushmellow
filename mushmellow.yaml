@@ -11,9 +11,14 @@ ci:
 
 mushmellows:
 
-  test-timeout:
-    description: Test timeout behavior
+  dev:
+    description: Development flow with messages
     puffs:
-      - id: slow-puff
-        run: sleep 5
-        timeout: 1s
+      - id: greeting
+        type: message
+        text: Welcome to the Mushmellow dev experience!
+      - id: build
+        run: go build .
+      - id: info
+        type: message
+        text: Build complete. Ready to puff.

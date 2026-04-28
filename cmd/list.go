@@ -23,11 +23,10 @@ func newListCmd() *cobra.Command {
 			}
 
 			fmt.Println(ui.BuildHeader(cfg.Name))
-			fmt.Println("Available workflows:")
-			fmt.Println()
+			fmt.Printf("%s Available workflows:\n\n", ui.Icons.Info)
 
 			for name, m := range cfg.Mushmellows {
-				fmt.Printf("  %s - %s (%d puffs)\n", name, m.Description, len(m.Puffs))
+				fmt.Printf("  %s %s — %s (%d puffs)\n", ui.Icons.Bullet, ui.Styles.Name.Render(name), m.Description, len(m.Puffs))
 			}
 
 			return nil

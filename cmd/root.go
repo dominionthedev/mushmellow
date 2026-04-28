@@ -5,11 +5,12 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/dominionthedev/mushmellow/internal/ui"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "mushmellow",
-	Short: "🍡 Mushmellow — Soft workflows. Hard execution.",
+	Short: ui.Icons.Mushmellow + " Mushmellow — Soft workflows. Hard execution.",
 	Long: `Mushmellow is a lightweight, stylish workflow runtime for defining 
 and executing structured developer flows called "mushmellows", composed 
 of dependency-aware units called "puffs".
@@ -21,7 +22,7 @@ something readable, portable, expressive, and aesthetic.`,
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s %v\n", ui.Icons.Error, err)
 		os.Exit(1)
 	}
 }

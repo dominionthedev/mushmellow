@@ -32,7 +32,6 @@ func (e *ShellExecutor) ExecutePuff(ctx context.Context, puff config.Puff) Resul
 
 	switch puff.Type {
 	case "message":
-		fmt.Printf("💬 %s\n", puff.Text)
 		return Result{ID: puff.ID, Success: true, Duration: time.Since(start)}
 	case "wait":
 		duration, err := time.ParseDuration(puff.Duration)

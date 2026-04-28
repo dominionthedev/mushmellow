@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/dominionthedev/mushmellow/internal/ci"
 	"github.com/dominionthedev/mushmellow/internal/config"
 	"github.com/dominionthedev/mushmellow/internal/engine"
-	"github.com/dominionthedev/mushmellow/internal/ci"
+	"github.com/dominionthedev/mushmellow/internal/ui"
 )
 
 func init() {
@@ -49,15 +52,33 @@ func newRunCmd() *cobra.Command {
 			mode, _ := ci.FromString(modeStr)
 
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			exportPath, _ := cmd.Flags().GetString("export")
 
 			runner := engine.NewRunner(cfg, mode)
 			runner.SetDryRun(dryRun)
-			_, err = runner.Run(context.Background(), args[0])
+			summary, err := runner.Run(context.Background(), args[0])
+
+			if exportPath != "" && summary != nil {
+				if err := exportSummary(exportPath, summary); err != nil {
+					fmt.Printf("%s Failed to export summary: %v\n", ui.Icons.Error, err)
+				}
+			}
+
 			return err
 		},
 	}
 
 	cmd.Flags().BoolP("dry-run", "d", false, "Show what would run without executing")
+	cmd.Flags().StringP("export", "e", "", "Export execution summary to JSON file")
 
 	return cmd
+}
+
+func exportSummary(path string, summary *engine.Summary) error {
+	// Simple JSON export for now
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
