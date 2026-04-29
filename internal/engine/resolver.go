@@ -18,18 +18,16 @@ func NewResolver(mushmellow config.Mushmellow) *Resolver {
 	}
 }
 
-// Resolve returns the puffs in topological order
-func (r *Resolver) Resolve() ([]config.Puff, error) {
+// Resolve returns the puffs in topological order, grouped into execution batches
+func (r *Resolver) Resolve() ([][]config.Puff, error) {
 	if r.graph.HasCycle() {
 		return nil, ErrCycleDetected
 	}
 
-	// Calculate in-degrees (number of dependencies for each node)
+	// Calculate in-degrees
 	inDegree := make(map[string]int)
 	for id, node := range r.graph.Nodes {
 		inDegree[id] = len(node.Edges)
-		
-		// Validate that all dependencies exist
 		for _, dep := range node.Edges {
 			if _, ok := r.graph.Nodes[dep]; !ok {
 				return nil, fmt.Errorf("%w: puff '%s' depends on non-existent puff '%s'", ErrMissingDependency, id, dep)
@@ -37,42 +35,38 @@ func (r *Resolver) Resolve() ([]config.Puff, error) {
 		}
 	}
 
-	// Initialize queue with nodes that have no dependencies
-	queue := make([]string, 0)
-	for id, degree := range inDegree {
-		if degree == 0 {
-			queue = append(queue, id)
+	var batches [][]config.Puff
+
+	for {
+		// Find all nodes with in-degree 0
+		var currentBatch []config.Puff
+		var currentIDs []string
+
+		for id, degree := range inDegree {
+			if degree == 0 {
+				currentBatch = append(currentBatch, r.graph.Nodes[id].Puff)
+				currentIDs = append(currentIDs, id)
+			}
 		}
-	}
 
-	resultIDs := make([]string, 0)
-	for len(queue) > 0 {
-		// We want deterministic sorting if multiple nodes are ready.
-		// For now, we just take the first. 
-		// In the future, we might sort by ID or priority.
-		currentID := queue[0]
-		queue = queue[1:]
-		resultIDs = append(resultIDs, currentID)
+		if len(currentBatch) == 0 {
+			break
+		}
 
-		// Find nodes that depend on the current node
-		for _, dependentID := range r.graph.Reverse[currentID] {
-			inDegree[dependentID]--
-			if inDegree[dependentID] == 0 {
-				queue = append(queue, dependentID)
+		batches = append(batches, currentBatch)
+
+		// Remove current batch from in-degree map and update neighbors
+		for _, id := range currentIDs {
+			delete(inDegree, id)
+			for _, dependentID := range r.graph.Reverse[id] {
+				inDegree[dependentID]--
 			}
 		}
 	}
 
-	if len(resultIDs) != len(r.graph.Nodes) {
-		// This should have been caught by HasCycle, but good to have as a fallback.
-		return nil, fmt.Errorf("could not resolve all dependencies (possible hidden cycle or logic error)")
+	if len(inDegree) > 0 {
+		return nil, fmt.Errorf("could not resolve all dependencies (hidden cycle)")
 	}
 
-	// Map IDs back to Puff objects
-	puffs := make([]config.Puff, 0, len(resultIDs))
-	for _, id := range resultIDs {
-		puffs = append(puffs, r.graph.Nodes[id].Puff)
-	}
-
-	return puffs, nil
+	return batches, nil
 }

@@ -47,7 +47,7 @@ func (r *Runner) Run(ctx context.Context, name string) (*Summary, error) {
 
 	// Resolve execution order based on dependencies
 	resolver := NewResolver(m)
-	order, err := resolver.Resolve()
+	batches, err := resolver.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve dependencies: %w", err)
 	}
@@ -59,55 +59,57 @@ func (r *Runner) Run(ctx context.Context, name string) (*Summary, error) {
 
 	summary := &Summary{Name: name}
 
-	for _, puff := range order {
-		// ... mergedEnv logic ...
-		mergedEnv := make(map[string]string)
-		for k, v := range r.cfg.Env {
-			mergedEnv[k] = v
-		}
-		for k, v := range m.Env {
-			mergedEnv[k] = v
-		}
-		for k, v := range puff.Env {
-			mergedEnv[k] = v
-		}
-		puff.Env = mergedEnv
-
-		if r.mode == ci.SoftMode {
-			if puff.Type == "message" {
-				fmt.Println(ui.BuildMessage(puff.Text))
-			} else {
-				fmt.Println(ui.BuildRun(puff.ID))
+	for _, batch := range batches {
+		for _, puff := range batch {
+			// Merge environment variables: Global -> Mushmellow -> Puff
+			mergedEnv := make(map[string]string)
+			for k, v := range r.cfg.Env {
+				mergedEnv[k] = v
 			}
-		} else if r.mode == ci.CIMode {
-			fmt.Printf("==> Executing puff: %s\n", puff.ID)
-		}
+			for k, v := range m.Env {
+				mergedEnv[k] = v
+			}
+			for k, v := range puff.Env {
+				mergedEnv[k] = v
+			}
+			puff.Env = mergedEnv
 
-		if r.dryRun {
 			if r.mode == ci.SoftMode {
-				fmt.Printf("    (dry-run: %s)\n", puff.Run)
+				if puff.Type == "message" {
+					fmt.Println(ui.BuildMessage(puff.Text))
+				} else {
+					fmt.Println(ui.BuildRun(puff.ID))
+				}
+			} else if r.mode == ci.CIMode {
+				fmt.Printf("%s Executing puff: %s\n", ui.Icons.Bullet, puff.ID)
 			}
-			continue
-		}
 
-		result := r.executor.ExecutePuff(ctx, puff)
-		summary.Results = append(summary.Results, result)
+			if r.dryRun {
+				if r.mode == ci.SoftMode {
+					fmt.Printf("    (dry-run: %s)\n", puff.Run)
+				}
+				continue
+			}
 
-		if !result.Success {
+			result := r.executor.ExecutePuff(ctx, puff)
+			summary.Results = append(summary.Results, result)
+
+			if !result.Success {
+				if r.mode == ci.SoftMode {
+					fmt.Println(ui.BuildError(puff.ID, result.ErrorMessage))
+				} else {
+					fmt.Printf("%s puff '%s' failed: %s\n", ui.Icons.Error, puff.ID, result.ErrorMessage)
+				}
+				return summary, fmt.Errorf("puff '%s' failed", puff.ID)
+			}
+
 			if r.mode == ci.SoftMode {
-				fmt.Println(ui.BuildError(puff.ID, result.ErrorMessage))
-			} else {
-				fmt.Printf("%s puff '%s' failed: %s\n", ui.Icons.Error, puff.ID, result.ErrorMessage)
+				fmt.Println(ui.BuildSuccess(puff.ID, result.Duration))
+			} else if r.mode == ci.CIMode {
+				fmt.Printf("%s Finished puff: %s (%s)\n", ui.Icons.Success, puff.ID, result.Duration)
 			}
-			return summary, fmt.Errorf("puff '%s' failed", puff.ID)
-		}
-
-		if r.mode == ci.SoftMode {
-			fmt.Println(ui.BuildSuccess(puff.ID, result.Duration))
-		} else if r.mode == ci.CIMode {
-			fmt.Printf("==> Finished puff: %s (%s)\n", puff.ID, result.Duration)
 		}
 	}
 
 	return summary, nil
-}
+	}

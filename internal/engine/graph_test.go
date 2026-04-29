@@ -62,19 +62,19 @@ func TestGraph_HasCycle(t *testing.T) {
 
 func TestResolver_Resolve(t *testing.T) {
 	tests := []struct {
-		name      string
-		puffs     []config.Puff
-		wantOrder []string
-		wantErr   error
+		name       string
+		puffs      []config.Puff
+		wantBatches int
+		wantErr    error
 	}{
 		{
-			name: "basic ordering",
+			name: "linear dependencies",
 			puffs: []config.Puff{
 				{ID: "build", DependsOn: []string{"test"}},
 				{ID: "test", DependsOn: []string{"lint"}},
 				{ID: "lint"},
 			},
-			wantOrder: []string{"lint", "test", "build"},
+			wantBatches: 3, // lint, then test, then build
 		},
 		{
 			name: "missing dependency",
@@ -84,16 +84,13 @@ func TestResolver_Resolve(t *testing.T) {
 			wantErr: ErrMissingDependency,
 		},
 		{
-			name: "multiple roots",
+			name: "parallel groups",
 			puffs: []config.Puff{
 				{ID: "A"},
 				{ID: "B"},
 				{ID: "C", DependsOn: []string{"A", "B"}},
 			},
-			// Order of A and B can vary, but C must be last.
-			// Our implementation currently uses map iteration order which is semi-random,
-			// but Kahn's algorithm will pick ready nodes as they appear.
-			wantOrder: []string{"A", "B", "C"}, 
+			wantBatches: 2, // {A, B}, then {C}
 		},
 	}
 
@@ -114,17 +111,8 @@ func TestResolver_Resolve(t *testing.T) {
 				t.Fatalf("Resolver.Resolve() unexpected error: %v", err)
 			}
 
-			if len(got) != len(tt.wantOrder) {
-				t.Fatalf("Resolver.Resolve() got %d puffs, want %d", len(got), len(tt.wantOrder))
-			}
-
-			// Note: For multiple valid orders, this test might need adjustment.
-			// But for these cases, the order should be stable enough or we check logic.
-			for i, p := range got {
-				// We won't strictly check A vs B if both are ready, 
-				// but let's see how it performs.
-				_ = i
-				_ = p
+			if len(got) != tt.wantBatches {
+				t.Fatalf("Resolver.Resolve() got %d batches, want %d", len(got), tt.wantBatches)
 			}
 		})
 	}
