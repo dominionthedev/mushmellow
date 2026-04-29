@@ -52,15 +52,23 @@ func newRunCmd() *cobra.Command {
 			mode, _ := ci.FromString(modeStr)
 
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			exportPath, _ := cmd.Flags().GetString("export")
+			jsonPath, _ := cmd.Flags().GetString("json")
+			junitPath, _ := cmd.Flags().GetString("junit")
 
 			runner := engine.NewRunner(cfg, mode)
 			runner.SetDryRun(dryRun)
 			summary, err := runner.Run(context.Background(), args[0])
 
-			if exportPath != "" && summary != nil {
-				if err := exportSummary(exportPath, summary); err != nil {
-					fmt.Printf("%s Failed to export summary: %v\n", ui.Icons.Error, err)
+			if summary != nil {
+				if jsonPath != "" {
+					if err := engine.ExportJSON(jsonPath, summary); err != nil {
+						fmt.Printf("%s Failed to export JSON: %v\n", ui.Icons.Error, err)
+					}
+				}
+				if junitPath != "" {
+					if err := engine.ExportJUnit(junitPath, summary); err != nil {
+						fmt.Printf("%s Failed to export JUnit: %v\n", ui.Icons.Error, err)
+					}
 				}
 			}
 
@@ -69,16 +77,8 @@ func newRunCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolP("dry-run", "d", false, "Show what would run without executing")
-	cmd.Flags().StringP("export", "e", "", "Export execution summary to JSON file")
+	cmd.Flags().String("json", "", "Export execution summary to JSON file")
+	cmd.Flags().String("junit", "", "Export execution summary to JUnit XML file")
 
 	return cmd
-}
-
-func exportSummary(path string, summary *engine.Summary) error {
-	// Simple JSON export for now
-	data, err := json.MarshalIndent(summary, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
 }
