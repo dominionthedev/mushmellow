@@ -35,6 +35,18 @@ func newDoctorCmd() *cobra.Command {
 				fmt.Printf("%s Config schema is valid\n", ui.Icons.Success)
 			}
 
+			// Check for .env
+			if _, err := os.Stat(".env"); err == nil {
+				dotenv, err := config.LoadEnv(".env")
+				if err != nil {
+					fmt.Printf("%s .env file found but failed to load: %v\n", ui.Icons.Error, err)
+				} else {
+					fmt.Printf("%s .env file found (%d variables)\n", ui.Icons.Success, len(dotenv))
+				}
+			} else {
+				fmt.Printf("%s No local .env file found (optional)\n", ui.Icons.Info)
+			}
+
 			for name, m := range cfg.Mushmellows {
 				resolver := engine.NewResolver(m)
 				_, err := resolver.Resolve()

@@ -3,11 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"encoding/xml"
-	"fmt"
 	"os"
-	"time"
-
-	"github.com/dominionthedev/mushmellow/internal/executor"
 )
 
 // JUnitReport represents a JUnit XML report structure
