@@ -1,0 +1,4 @@
+puffs:
+  build:
+    steps:
+      - run: go build -o bin/api ./...

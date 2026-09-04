@@ -1,0 +1,45 @@
+on_failure: isolate
+retries: 0
+
+profiles:
+  mushmellow:
+    pool: 1
+  build:
+    pool: 4
+    env:
+      RUST_LOG: info
+
+puffs:
+  build:
+    profile: build
+    steps:
+      - echo: "building api"
+      - member: cmd/api::build
+      - echo: "done building api"
+    on_failure:
+      steps:
+        - echo: "failed to build API"
+      recover: false
+
+  cargo_build:
+    profile: build
+    steps:
+      - run: cargo build --release
+    artifacts:
+      - path: target/release/mybin
+    branch:
+      matrix:
+        CARGO_TARGET_DIR: ["branch-a", "branch-b"]
+
+  test:
+    depends_on:
+      - puff: cargo_build
+    steps:
+      - run: cargo test
+
+  notify_failure:
+    depends_on:
+      - puff: cargo_build
+        on: failure
+    steps:
+      - echo: "cargo build failed, notifying"
