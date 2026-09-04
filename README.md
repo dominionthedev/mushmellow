@@ -8,10 +8,9 @@ YAML; mushmellow resolves them into a DAG, runs what's runnable
 concurrently within resource budgets you define, and gives you an honest
 account of what happened and why.
 
-> **Status: pre-alpha.** The dependency graph, YAML parsing, and branch
+> **Status: in progress.** The dependency graph, YAML parsing, and branch
 > expansion are implemented and tested. Nothing executes yet — there is
-> no scheduler or runner. See [Roadmap](#roadmap) and
-> [CHANGELOG.md](./CHANGELOG.md) for exactly what's real today.
+> no scheduler or runner.
 
 ## Why
 
@@ -20,14 +19,12 @@ nothing else. Most workflow engines (GitHub Actions, Dagger) assume
 disposable cloud runners and bake in their own isolation model.
 Mushmellow is neither: it's built for a local machine you actually care
 about the resource usage of, with a failure model precise enough to
-tell you not just "it failed" but *what* failed, *what got blocked
-because of it*, and *whether a handler already dealt with it*.
+tell you not just "it failed" but _what_ failed, _what got blocked
+because of it_, and _whether a handler already dealt with it_.
 
 Mushmellow does not attempt to provide isolation itself. If you want a
 puff sandboxed, run mushmellow inside something that provides that
 (a container, [Runbox](https://github.com/dominionthedev/runbox), etc).
-That boundary is external and honest, not implied by a config field
-mushmellow can't actually enforce.
 
 ## Concepts
 
@@ -52,23 +49,21 @@ mushmellow can't actually enforce.
   unless it explicitly recovers) or another puff can watch for a
   failure externally via `depends_on(x, on: "failure")`.
 
-## Try it
+## Install
 
-```sh
-make build
-make validate
+With Go
+
+```bash
+go install github.com/dominionthedev/mushmellow@latest
 ```
 
-`make validate` parses `examples/basic/mushmellow.yaml`, discovers its
-`cmd/api` member, expands the `cargo_build` branch matrix, cascades that
-expansion into `test` and `notify_failure`, runs cycle detection, and
-prints the fully resolved graph — proof the pipeline works end to end,
-not just that it compiles.
+Or locally
 
-```sh
-make test    # unit tests
-make vet     # go vet
-make fmt     # gofmt -w .
+```bash
+git clone https://github.com/dominionthedev/mushmellow
+cd mushmellow
+make install
+make clean
 ```
 
 ## Example
