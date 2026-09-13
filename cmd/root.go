@@ -9,7 +9,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "mushmellow",
-	Short: "mushmellow - a blazing fast CLI tool",
+	Short: "mushmellow - a deterministic orchestration runtime for dev workflows",
 }
 
 func Execute() {
