@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt validate clean
+.PHONY: build test vet fmt validate install clean
 
 build:
 	go build -o bin/mushmellow .
@@ -7,7 +7,7 @@ install: build
 	cp bin/mushmellow /usr/local/bin/mushmellow
 
 test:
-	go test ./...
+	go test ./... -race
 
 vet:
 	go vet ./...
