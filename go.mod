@@ -2,6 +2,11 @@ module github.com/dominionthedev/mushmellow
 
 go 1.22
 
+retract (
+	[v0.1.0, v0.3.0]
+	v0.3.1
+)
+
 require (
 	github.com/spf13/cobra v1.8.0
 	gopkg.in/yaml.v3 v3.0.1
