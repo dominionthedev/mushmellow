@@ -1,0 +1,185 @@
+// Package state defines Mushmellow's Runtime State: the persisted
+// record of one invocation, written to
+// .mushmellow/runs/<run_id>/state.json. This is the single source of
+// truth `mushmellow inspect` reads from — Diagnostics is a formatted
+// view over this, not a separate subsystem.
+package state
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+// Status is one of the five terminal states a puff can end in, plus
+// two transient in-flight states.
+type Status string
+
+const (
+	Pending   Status = "pending"
+	Running   Status = "running"
+	Success   Status = "success"
+	Failed    Status = "failed"
+	Recovered Status = "recovered" // self-handler explicitly recovered
+	Blocked   Status = "blocked"   // unreachable: upstream failed, or an
+	// on:"failure"/on:"success" condition can never be satisfied
+	Cancelled Status = "cancelled" // halt mode killed it mid-flight
+)
+
+// IsTerminal reports whether a status will never change again.
+func (s Status) IsTerminal() bool {
+	switch s {
+	case Success, Failed, Recovered, Blocked, Cancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// SatisfiesSuccess reports whether this terminal status counts as
+// "success" for a downstream on:"success" edge. Recovered counts —
+// a self-handler that explicitly recovered lets normal downstream
+// proceed, per the locked failure model.
+func (s Status) SatisfiesSuccess() bool {
+	return s == Success || s == Recovered
+}
+
+// Attempt is one execution attempt of a puff's steps. A puff with
+// retries has multiple attempts recorded; the last one determines
+// the puff's final status.
+type Attempt struct {
+	Attempt   int       `json:"attempt"`
+	Status    Status    `json:"status"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at,omitempty"`
+	Error     string    `json:"error,omitempty"`
+}
+
+// SelfHandlerResult records whether a puff's on_failure block ran and
+// whether it explicitly recovered. Firing never implies recovery —
+// no swallow-by-default.
+type SelfHandlerResult struct {
+	Fired     bool `json:"fired"`
+	Recovered bool `json:"recovered"`
+}
+
+// MemberCallRef points at a nested member run's own state file,
+// rather than inlining it — members are self-contained workspaces
+// with their own run history, independent of who called them.
+type MemberCallRef struct {
+	Member string `json:"member"`
+	Puff   string `json:"puff"`
+	RunID  string `json:"run_id"`
+	Status Status `json:"status"`
+}
+
+// ArtifactResult is the recorded outcome of one declared artifact
+// path: whether it exists, and whether anything changed outside
+// every declared path (drift is a diagnostic, never enforcement).
+type ArtifactResult struct {
+	Path   string `json:"path"`
+	Exists bool   `json:"exists"`
+}
+
+// PuffState is one puff's full record within a run.
+type PuffState struct {
+	Status       Status             `json:"status"`
+	Attempts     []Attempt          `json:"attempts"`
+	MaxRetries   int                `json:"max_retries"`
+	BlockedBy    string             `json:"blocked_by,omitempty"`
+	Profile      string             `json:"profile"`
+	ResolvedPool int                `json:"resolved_pool"`
+	Branch       string             `json:"branch,omitempty"`
+	SelfHandler  *SelfHandlerResult `json:"self_handler,omitempty"`
+	MemberCalls  []MemberCallRef    `json:"member_calls,omitempty"`
+	Artifacts    []ArtifactResult   `json:"artifacts,omitempty"`
+	StartedAt    time.Time          `json:"started_at,omitempty"`
+	EndedAt      time.Time          `json:"ended_at,omitempty"`
+}
+
+// Run is the full Runtime State for one invocation.
+type Run struct {
+	RunID         string                `json:"run_id"`
+	InvokedPuff   string                `json:"invoked_puff"`
+	Workspace     string                `json:"workspace"`
+	OnFailureMode string                `json:"on_failure_mode"`
+	StartedAt     time.Time             `json:"started_at"`
+	EndedAt       time.Time             `json:"ended_at,omitempty"`
+	Puffs         map[string]*PuffState `json:"puffs"`
+	Cancelled     []string              `json:"cancelled,omitempty"`
+}
+
+// NewRunID generates a short, filesystem-safe run identifier.
+//
+// Bug fixed here: an earlier version took the leading hex digits of
+// UnixNano(), which barely change between calls microseconds apart -
+// exactly the digits least likely to differ for two runs invoked back
+// to back. Two runs seconds apart collided on the same ID as a
+// result. Random bytes have no such structure to accidentally rely on.
+func NewRunID() string {
+	b := make([]byte, 5)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand failing is effectively unrecoverable on any real
+		// system; fall back to a timestamp-based ID rather than a
+		// zero-value one, which would silently collide on every call.
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+// Save writes the run state to
+// <workspaceDir>/.mushmellow/runs/<run_id>/state.json.
+func (r *Run) Save(workspaceDir string) error {
+	dir := filepath.Join(workspaceDir, ".mushmellow", "runs", r.RunID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating run dir: %w", err)
+	}
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling run state: %w", err)
+	}
+	path := filepath.Join(dir, "state.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return nil
+}
+
+// Load reads a previously saved run state by ID.
+func Load(workspaceDir, runID string) (*Run, error) {
+	path := filepath.Join(workspaceDir, ".mushmellow", "runs", runID, "state.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var r Run
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &r, nil
+}
+
+// LogPath returns where a given attempt's captured stdout/stderr
+// should be written.
+func LogPath(workspaceDir, runID, puffName string, attempt int) string {
+	dir := filepath.Join(workspaceDir, ".mushmellow", "runs", runID, "logs")
+	safe := sanitizeForFilename(puffName)
+	return filepath.Join(dir, fmt.Sprintf("%s-attempt%d.log", safe, attempt))
+}
+
+func sanitizeForFilename(s string) string {
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			out = append(out, r)
+		default:
+			out = append(out, '-')
+		}
+	}
+	return string(out)
+}
