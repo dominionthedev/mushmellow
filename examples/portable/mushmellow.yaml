@@ -1,0 +1,41 @@
+retries: 0
+
+profiles:
+  mushmellow:
+    pool: 2
+
+puffs:
+  a:
+    steps:
+      - echo: "running a"
+
+  b:
+    depends_on:
+      - puff: a
+    steps:
+      - run: "false"
+    on_failure:
+      steps:
+        - echo: "b failed, cleaning up"
+
+  c:
+    depends_on:
+      - puff: b
+    steps:
+      - echo: "c should never run - b failed"
+
+  notify_b_failure:
+    depends_on:
+      - puff: b
+        on: failure
+    steps:
+      - echo: "notified: b failed"
+
+  unrelated:
+    steps:
+      - echo: "unrelated puff runs regardless of b's outcome"
+
+  flaky:
+    retries: 2
+    steps:
+      - run: "false"
