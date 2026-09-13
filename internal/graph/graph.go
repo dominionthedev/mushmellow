@@ -163,7 +163,39 @@ func (g *Graph) downstreamOf(name string) []string {
 	return result
 }
 
-// detectCycles runs a standard three-color DFS over the dependency
+// Closure returns every node transitively required to run name: name
+// itself plus every upstream dependency, recursively. This is the
+// actual execution set for one invocation — Mushmellow only ever
+// executes a puff and whatever its dependency chain pulls in, there
+// is no "run the whole workflow" operation.
+func (g *Graph) Closure(name string) (map[string]*Node, error) {
+	if _, ok := g.Nodes[name]; !ok {
+		return nil, fmt.Errorf("unknown puff %q", name)
+	}
+	result := map[string]*Node{}
+	var visit func(n string) error
+	visit = func(n string) error {
+		if _, done := result[n]; done {
+			return nil
+		}
+		node, ok := g.Nodes[n]
+		if !ok {
+			return fmt.Errorf("edge references unknown node %q", n)
+		}
+		result[n] = node
+		for _, e := range node.Edges {
+			if err := visit(e.Puff); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := visit(name); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // edges and fails on any back-edge.
 func (g *Graph) detectCycles() error {
 	const (
