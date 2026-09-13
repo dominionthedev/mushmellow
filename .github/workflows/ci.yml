@@ -32,7 +32,7 @@ jobs:
         run: go build ./...
 
       - name: Test
-        run: go test ./... -v
+        run: go test ./... -race -v
 
       - name: Validate example workspace
         run: |
