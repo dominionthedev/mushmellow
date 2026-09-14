@@ -39,3 +39,10 @@ puffs:
     retries: 2
     steps:
       - run: "false"
+
+  gated:
+    when:
+      - kind: env_set
+        env: MUSHMELLOW_ENABLE_GATED
+    steps:
+      - echo: "gated puff ran - MUSHMELLOW_ENABLE_GATED was set"

@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -186,6 +187,178 @@ func TestRun_StateFilePersisted(t *testing.T) {
 	path := filepath.Join(root.Dir, ".mushmellow", "runs", r.RunID, "state.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected state file at %s: %v", path, err)
+	}
+}
+
+func TestRun_When_FileContains_Met(t *testing.T) {
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {
+			Steps: []puff.Step{shell("true")},
+			When: []puff.Criterion{{
+				Kind: puff.CriterionFileContains, Path: "marker.txt", Substr: "// TEST:",
+			}},
+		},
+	})
+	if err := os.WriteFile(filepath.Join(root.Dir, "marker.txt"), []byte("// TEST: ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := buildAndRun(t, root, "a")
+	if r.Puffs["a"].Status != state.Success {
+		t.Fatalf("want success, got %s", r.Puffs["a"].Status)
+	}
+}
+
+func TestRun_When_FileContains_Unmet_SkipsPuff(t *testing.T) {
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {
+			Steps: []puff.Step{shell("true")},
+			When: []puff.Criterion{{
+				Kind: puff.CriterionFileContains, Path: "marker.txt", Substr: "// TEST:",
+			}},
+		},
+	})
+	if err := os.WriteFile(filepath.Join(root.Dir, "marker.txt"), []byte("nothing here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := buildAndRun(t, root, "a")
+	if r.Puffs["a"].Status != state.Blocked {
+		t.Fatalf("want blocked (criterion unmet), got %s", r.Puffs["a"].Status)
+	}
+	if r.Puffs["a"].BlockedBy == "" {
+		t.Fatal("want a human-readable reason in BlockedBy")
+	}
+}
+
+func TestRun_When_FileContains_MissingFile_IsUnmetNotError(t *testing.T) {
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {
+			Steps: []puff.Step{shell("true")},
+			When: []puff.Criterion{{
+				Kind: puff.CriterionFileContains, Path: "does-not-exist.txt", Substr: "x",
+			}},
+		},
+	})
+	r := buildAndRun(t, root, "a") // must not error out the whole run
+	if r.Puffs["a"].Status != state.Blocked {
+		t.Fatalf("want blocked, got %s", r.Puffs["a"].Status)
+	}
+}
+
+func TestRun_When_EnvSet(t *testing.T) {
+	t.Setenv("MUSHMELLOW_TEST_VAR", "1")
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {
+			Steps: []puff.Step{shell("true")},
+			When:  []puff.Criterion{{Kind: puff.CriterionEnvSet, EnvVar: "MUSHMELLOW_TEST_VAR"}},
+		},
+	})
+	r := buildAndRun(t, root, "a")
+	if r.Puffs["a"].Status != state.Success {
+		t.Fatalf("want success, got %s", r.Puffs["a"].Status)
+	}
+}
+
+func TestRun_When_EnvEquals_WrongValue_Blocked(t *testing.T) {
+	t.Setenv("MUSHMELLOW_TEST_VAR", "wrong")
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {
+			Steps: []puff.Step{shell("true")},
+			When: []puff.Criterion{{
+				Kind: puff.CriterionEnvEquals, EnvVar: "MUSHMELLOW_TEST_VAR", EnvValue: "expected",
+			}},
+		},
+	})
+	r := buildAndRun(t, root, "a")
+	if r.Puffs["a"].Status != state.Blocked {
+		t.Fatalf("want blocked, got %s", r.Puffs["a"].Status)
+	}
+}
+
+func TestRun_When_CommandOK(t *testing.T) {
+	root := newTestRoot(t, map[string]puff.Puff{
+		"true_case":  {Steps: []puff.Step{shell("true")}, When: []puff.Criterion{{Kind: puff.CriterionCommandOK, Command: "true"}}},
+		"false_case": {Steps: []puff.Step{shell("true")}, When: []puff.Criterion{{Kind: puff.CriterionCommandOK, Command: "false"}}},
+	})
+	g, err := graph.Build(root)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	d := New(root, g)
+
+	r1, err := d.Run("true_case")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r1.Puffs["true_case"].Status != state.Success {
+		t.Fatalf("true_case: want success, got %s", r1.Puffs["true_case"].Status)
+	}
+
+	d2 := New(root, g)
+	r2, err := d2.Run("false_case")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2.Puffs["false_case"].Status != state.Blocked {
+		t.Fatalf("false_case: want blocked, got %s", r2.Puffs["false_case"].Status)
+	}
+}
+
+func TestRun_When_PortOpen(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to open a real listener for the test: %v", err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	root := newTestRoot(t, map[string]puff.Puff{
+		"open_port": {
+			Steps: []puff.Step{shell("true")},
+			When:  []puff.Criterion{{Kind: puff.CriterionPortOpen, Host: "127.0.0.1", Port: port}},
+		},
+	})
+	r := buildAndRun(t, root, "open_port")
+	if r.Puffs["open_port"].Status != state.Success {
+		t.Fatalf("want success (port is actually open), got %s", r.Puffs["open_port"].Status)
+	}
+}
+
+func TestRun_When_PortClosed_Blocked(t *testing.T) {
+	// Grab a port and immediately close the listener, so nothing is
+	// actually bound - a real "not reachable" case, not a guess.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to allocate a port for the test: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	root := newTestRoot(t, map[string]puff.Puff{
+		"closed_port": {
+			Steps: []puff.Step{shell("true")},
+			When:  []puff.Criterion{{Kind: puff.CriterionPortOpen, Host: "127.0.0.1", Port: port}},
+		},
+	})
+	r := buildAndRun(t, root, "closed_port")
+	if r.Puffs["closed_port"].Status != state.Blocked {
+		t.Fatalf("want blocked (port not reachable), got %s", r.Puffs["closed_port"].Status)
+	}
+}
+
+func TestRun_When_NoDependencies_StillChecked(t *testing.T) {
+	// Regression: evaluateReadiness used to short-circuit to
+	// ready=true for any puff with zero depends_on edges, skipping
+	// When entirely. A puff with no dependencies but a when: block
+	// must still have it evaluated.
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {
+			Steps: []puff.Step{shell("true")},
+			When:  []puff.Criterion{{Kind: puff.CriterionEnvSet, EnvVar: "MUSHMELLOW_DEFINITELY_UNSET_VAR"}},
+		},
+	})
+	r := buildAndRun(t, root, "a")
+	if r.Puffs["a"].Status != state.Blocked {
+		t.Fatalf("want blocked - when: must be checked even with no depends_on, got %s", r.Puffs["a"].Status)
 	}
 }
 

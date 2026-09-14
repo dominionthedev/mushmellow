@@ -7,6 +7,7 @@ package scheduler
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,22 +146,19 @@ func (d *Dispatcher) countTerminal(closure map[string]*graph.Node) int {
 
 // evaluateReadiness checks every edge of node against current
 // (possibly still-pending) upstream status. Returns ready=true only
-// once every edge is both terminal and satisfied. doomed=true means
-// at least one edge is terminal but can never be satisfied — e.g. an
-// on:"failure" edge whose upstream succeeded — so the node will never
-// run.
+// once every edge is both terminal and satisfied, AND every When
+// precondition (if any) is met at that moment. doomed=true means
+// either an edge can never be satisfied - e.g. an on:"failure" edge
+// whose upstream succeeded - or a When precondition failed its
+// one-shot check.
 //
-// Known limitation: "doomed because a condition can't be satisfied"
-// and "blocked because an upstream actually failed" are both reported
-// as state.Blocked. A real "skipped" status is a real gap — flagged
-// in CHANGELOG, not hidden.
+// Known limitation: "doomed because an edge condition can't be
+// satisfied", "doomed because a When precondition failed", and
+// "blocked because an upstream actually failed" are all reported as
+// state.Blocked. A real "skipped" status (distinct from "blocked") is
+// a genuine gap - flagged in CHANGELOG, not hidden.
 func (d *Dispatcher) evaluateReadiness(node *graph.Node) (ready bool, blockedBy string, doomed bool) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if len(node.Edges) == 0 {
-		return true, "", false
-	}
 	allTerminal := true
 	for _, e := range node.Edges {
 		up := d.State.Puffs[e.Puff]
@@ -169,13 +167,89 @@ func (d *Dispatcher) evaluateReadiness(node *graph.Node) (ready bool, blockedBy 
 			continue
 		}
 		if !edgeSatisfied(e.EffectiveCondition(), up.Status) {
+			d.mu.Unlock()
 			return false, e.Puff, true
 		}
 	}
+	d.mu.Unlock()
 	if !allTerminal {
 		return false, "", false
 	}
+
+	// Criteria evaluation can block on I/O (file reads, exec,
+	// network dials up to a few seconds for port_open) - it must not
+	// run while holding d.mu, or every other goroutine trying to
+	// update its own PuffState stalls behind it.
+	if len(node.Puff.When) > 0 {
+		met, reason := evaluateCriteria(d.Root.Dir, node.Puff.When)
+		if !met {
+			return false, reason, true
+		}
+	}
 	return true, "", false
+}
+
+// evaluateCriteria checks every When precondition on node, in order,
+// stopping at the first unmet one. Evaluated exactly once, at the
+// moment the node would otherwise dispatch (all edges already
+// satisfied) - not polled repeatedly and not pre-checked at parse
+// time, since the world (a file's contents, an env var, a port) can
+// change between parse and dispatch. A snapshot taken once here is
+// the answer committed to; this node will not be re-checked later if
+// the world changes after this call.
+func evaluateCriteria(workspaceDir string, criteria []puff.Criterion) (met bool, unmetReason string) {
+	for _, c := range criteria {
+		ok, err := evaluateCriterion(workspaceDir, c)
+		if err != nil {
+			return false, fmt.Sprintf("when: %s (error: %v)", c.Describe(), err)
+		}
+		if !ok {
+			return false, fmt.Sprintf("when: %s", c.Describe())
+		}
+	}
+	return true, ""
+}
+
+func evaluateCriterion(workspaceDir string, c puff.Criterion) (bool, error) {
+	switch c.Kind {
+	case puff.CriterionFileContains:
+		path := c.Path
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(workspaceDir, path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		return bytes.Contains(data, []byte(c.Substr)), nil
+
+	case puff.CriterionEnvSet:
+		_, ok := os.LookupEnv(c.EnvVar)
+		return ok, nil
+
+	case puff.CriterionEnvEquals:
+		v, ok := os.LookupEnv(c.EnvVar)
+		return ok && v == c.EnvValue, nil
+
+	case puff.CriterionCommandOK:
+		cmd := exec.Command("sh", "-c", c.Command)
+		return cmd.Run() == nil, nil
+
+	case puff.CriterionPortOpen:
+		addr := fmt.Sprintf("%s:%d", c.Host, c.Port)
+		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+		if err != nil {
+			return false, nil // unreachable is "not met", not an error
+		}
+		_ = conn.Close()
+		return true, nil
+
+	default:
+		return false, fmt.Errorf("unknown criterion kind %q", c.Kind)
+	}
 }
 
 func edgeSatisfied(cond puff.EdgeCondition, upstream state.Status) bool {

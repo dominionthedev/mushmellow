@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `when:` external preconditions: `file_contains`, `env_set`,
+  `env_equals`, `command_ok`, `port_open`. Evaluated exactly once, at
+  the moment a puff's dependency edges are already satisfied and it
+  would otherwise dispatch — not polled repeatedly, not pre-checked at
+  parse time, since the world (a file's contents, an env var, a port)
+  can change between parse and dispatch. A puff whose criteria aren't
+  met ends `blocked`, with a human-readable reason
+  (`when: env "X" is set`), not a silent no-op. `Criterion.Validate()`
+  catches missing required fields per kind (e.g. `port_open` without a
+  `port`) at parse time, not dispatch time.
 - `internal/state`: Runtime State types (`Run`, `PuffState`, `Attempt`)
   and persistence to `.mushmellow/runs/<run_id>/state.json`. Five
   terminal statuses (`success`/`failed`/`recovered`/`blocked`/`cancelled`)
@@ -30,6 +40,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it's never actually executed.
 
 ### Fixed
+- `evaluateReadiness` used to short-circuit to `ready=true` for any
+  puff with zero `depends_on` edges, which meant a dependency-free
+  puff with a `when:` block would skip the check entirely and always
+  run. Caught while wiring `when:` in; regression test
+  (`TestRun_When_NoDependencies_StillChecked`) added.
 - `state.NewRunID` collided on runs invoked in quick succession — it
   took the *leading* hex digits of a nanosecond timestamp, which are
   the digits least likely to differ between nearby calls. Replaced
@@ -40,11 +55,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was also missing the `install` target.
 
 ### Known limitations
-- `evaluateReadiness` reports two different situations as the same
-  `blocked` status: "an upstream actually failed" and "a condition
+- `evaluateReadiness` reports three different situations as the same
+  `blocked` status: "an upstream actually failed", "an edge condition
   (e.g. `on:"failure"` when upstream succeeded) can never be
-  satisfied." A real `skipped` status is a genuine gap, not hidden —
-  see code comment in `internal/scheduler/scheduler.go`.
+  satisfied", and now "a `when:` precondition wasn't met." A real
+  `skipped` status is a genuine gap, not hidden — see code comment in
+  `internal/scheduler/scheduler.go`.
+- `when:` criteria evaluation happens on the main dispatch loop's scan
+  (not inside a per-node goroutine), so a slow criterion (e.g.
+  `port_open` against an unreachable host, up to its 2s timeout) delays
+  the scan reaching other nodes later in that same pass. It does not
+  hold the dispatcher's mutex while doing so, so it doesn't stall other
+  puffs' status updates — just adds latency to when they're noticed as
+  ready.
 - Halt's SIGTERM-then-SIGKILL only covers `StepShell` processes
   currently running via `exec.Cmd`. A halt triggered while a
   `StepMember` call is mid-flight does not yet propagate the kill
