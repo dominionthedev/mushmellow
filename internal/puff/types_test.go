@@ -152,4 +152,40 @@ func TestResolvePool_Precedence(t *testing.T) {
 	}
 }
 
+func TestCriterionValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		c       Criterion
+		wantErr string
+	}{
+		{name: "file_contains valid", c: Criterion{Kind: CriterionFileContains, Path: "x", Substr: "y"}},
+		{name: "file_contains missing path", c: Criterion{Kind: CriterionFileContains, Substr: "y"}, wantErr: "requires path"},
+		{name: "file_contains missing contains", c: Criterion{Kind: CriterionFileContains, Path: "x"}, wantErr: "requires contains"},
+		{name: "env_set valid", c: Criterion{Kind: CriterionEnvSet, EnvVar: "X"}},
+		{name: "env_set missing env", c: Criterion{Kind: CriterionEnvSet}, wantErr: "requires env"},
+		{name: "env_equals valid", c: Criterion{Kind: CriterionEnvEquals, EnvVar: "X", EnvValue: "y"}},
+		{name: "env_equals missing value", c: Criterion{Kind: CriterionEnvEquals, EnvVar: "X"}, wantErr: "requires equals"},
+		{name: "command_ok valid", c: Criterion{Kind: CriterionCommandOK, Command: "true"}},
+		{name: "command_ok missing command", c: Criterion{Kind: CriterionCommandOK}, wantErr: "requires command"},
+		{name: "port_open valid", c: Criterion{Kind: CriterionPortOpen, Host: "localhost", Port: 8080}},
+		{name: "port_open missing host", c: Criterion{Kind: CriterionPortOpen, Port: 8080}, wantErr: "requires host"},
+		{name: "port_open bad port", c: Criterion{Kind: CriterionPortOpen, Host: "localhost", Port: 70000}, wantErr: "valid port"},
+		{name: "unknown kind", c: Criterion{Kind: "carrier_pigeon"}, wantErr: "unknown criterion kind"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.c.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func intPtr(i int) *int { return &i }

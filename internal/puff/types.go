@@ -102,6 +102,65 @@ type Criterion struct {
 	Port int    `yaml:"port,omitempty"`
 }
 
+// Describe returns a short, human-readable summary of the
+// precondition, used in Runtime State when a puff is skipped because
+// this criterion was never satisfied.
+func (c Criterion) Describe() string {
+	switch c.Kind {
+	case CriterionFileContains:
+		return fmt.Sprintf("file %q contains %q", c.Path, c.Substr)
+	case CriterionEnvSet:
+		return fmt.Sprintf("env %q is set", c.EnvVar)
+	case CriterionEnvEquals:
+		return fmt.Sprintf("env %q equals %q", c.EnvVar, c.EnvValue)
+	case CriterionCommandOK:
+		return fmt.Sprintf("command %q exits 0", c.Command)
+	case CriterionPortOpen:
+		return fmt.Sprintf("%s:%d is reachable", c.Host, c.Port)
+	default:
+		return fmt.Sprintf("unknown criterion %q", c.Kind)
+	}
+}
+
+// Catching this at parse time (not dispatch time) means a typo'd
+// when: block fails fast instead of silently never triggering.
+func (c Criterion) Validate() error {
+	switch c.Kind {
+	case CriterionFileContains:
+		if c.Path == "" {
+			return fmt.Errorf("file_contains requires path")
+		}
+		if c.Substr == "" {
+			return fmt.Errorf("file_contains requires contains")
+		}
+	case CriterionEnvSet:
+		if c.EnvVar == "" {
+			return fmt.Errorf("env_set requires env")
+		}
+	case CriterionEnvEquals:
+		if c.EnvVar == "" {
+			return fmt.Errorf("env_equals requires env")
+		}
+		if c.EnvValue == "" {
+			return fmt.Errorf("env_equals requires equals")
+		}
+	case CriterionCommandOK:
+		if c.Command == "" {
+			return fmt.Errorf("command_ok requires command")
+		}
+	case CriterionPortOpen:
+		if c.Host == "" {
+			return fmt.Errorf("port_open requires host")
+		}
+		if c.Port <= 0 || c.Port > 65535 {
+			return fmt.Errorf("port_open requires a valid port (1-65535), got %d", c.Port)
+		}
+	default:
+		return fmt.Errorf("unknown criterion kind %q", c.Kind)
+	}
+	return nil
+}
+
 // ArtifactDecl is a puff's declared-intent output path. Mushmellow
 // indexes it and flags drift (writes outside every declared path) as
 // a non-blocking diagnostic. This is an audit trail, not access
@@ -186,6 +245,11 @@ func (p *Puff) Validate() error {
 	}
 	if p.Retries != nil && *p.Retries < 0 {
 		return fmt.Errorf("puff %q: retries override must be >= 0", p.Name)
+	}
+	for i, c := range p.When {
+		if err := c.Validate(); err != nil {
+			return fmt.Errorf("puff %q: when[%d]: %w", p.Name, i, err)
+		}
 	}
 	return nil
 }
