@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-// Status is one of the five terminal states a puff can end in, plus
-// two transient in-flight states.
+// Status is one of six terminal states a puff can end in, plus two
+// transient in-flight states.
 type Status string
 
 const (
@@ -25,15 +25,24 @@ const (
 	Success   Status = "success"
 	Failed    Status = "failed"
 	Recovered Status = "recovered" // self-handler explicitly recovered
-	Blocked   Status = "blocked"   // unreachable: upstream failed, or an
-	// on:"failure"/on:"success" condition can never be satisfied
-	Cancelled Status = "cancelled" // halt mode killed it mid-flight
+	Blocked   Status = "blocked"   // an actual failure occurred upstream
+	// (this puff's own execution, or an upstream puff's) and this
+	// puff can never satisfy its dependency edges as a result.
+	Skipped Status = "skipped" // this puff never ran, but nothing
+	// failed: an edge condition can never fire (an on:"failure"
+	// dependent whose watched puff succeeded), a when: precondition
+	// wasn't met, or an upstream puff was itself Skipped. Distinct
+	// from Blocked on purpose - "the world wasn't in the right
+	// state" and "something broke" are different situations and a
+	// report that conflates them is misleading.
+	Cancelled Status = "cancelled" // halt mode killed it mid-flight,
+	// or it was never dispatched because halt was already in effect.
 )
 
 // IsTerminal reports whether a status will never change again.
 func (s Status) IsTerminal() bool {
 	switch s {
-	case Success, Failed, Recovered, Blocked, Cancelled:
+	case Success, Failed, Recovered, Blocked, Skipped, Cancelled:
 		return true
 	default:
 		return false
@@ -46,6 +55,34 @@ func (s Status) IsTerminal() bool {
 // proceed, per the locked failure model.
 func (s Status) SatisfiesSuccess() bool {
 	return s == Success || s == Recovered
+}
+
+// SatisfiesFailure reports whether this terminal status counts as
+// "failure" for a downstream on:"failure" edge. Recovered counts —
+// the puff did fail (attempts exhausted) before its self-handler
+// recovered it, and an external on:"failure" watcher exists
+// specifically to react to failures even ones that get handled
+// internally too. Blocked/Skipped/Cancelled do not count: none of
+// them mean *this* puff failed, they mean it never ran.
+func (s Status) SatisfiesFailure() bool {
+	return s == Failed || s == Recovered
+}
+
+// CascadeStatus decides what a downstream on:"success" dependent
+// becomes when upstream didn't satisfy success. Failed or Blocked
+// upstream means a real failure happened somewhere in the chain -
+// Blocked propagates as Blocked. Skipped/Cancelled upstream means
+// nothing failed - the downstream inherits the same "didn't happen"
+// reason instead of being mislabeled as a failure.
+func CascadeStatus(upstream Status) Status {
+	switch upstream {
+	case Failed, Blocked:
+		return Blocked
+	case Cancelled:
+		return Cancelled
+	default: // Skipped, or any unexpected terminal status
+		return Skipped
+	}
 }
 
 // Attempt is one execution attempt of a puff's steps. A puff with
@@ -87,10 +124,16 @@ type ArtifactResult struct {
 
 // PuffState is one puff's full record within a run.
 type PuffState struct {
-	Status       Status             `json:"status"`
-	Attempts     []Attempt          `json:"attempts"`
-	MaxRetries   int                `json:"max_retries"`
-	BlockedBy    string             `json:"blocked_by,omitempty"`
+	Status     Status    `json:"status"`
+	Attempts   []Attempt `json:"attempts"`
+	MaxRetries int       `json:"max_retries"`
+	// Reason is a human-readable explanation, set whenever Status is
+	// Blocked, Skipped, or Cancelled. For Blocked it's usually an
+	// upstream puff name; for Skipped it describes the unmet edge
+	// condition or when: criterion; for Cancelled it names what
+	// triggered the halt. Never set for Success/Failed/Recovered -
+	// those are self-explanatory from Attempts.
+	Reason       string             `json:"reason,omitempty"`
 	Profile      string             `json:"profile"`
 	ResolvedPool int                `json:"resolved_pool"`
 	Branch       string             `json:"branch,omitempty"`

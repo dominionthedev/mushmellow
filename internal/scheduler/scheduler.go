@@ -93,11 +93,11 @@ func (d *Dispatcher) Run(invokedPuff string) (*state.Run, error) {
 			if dispatched[name] || terminal {
 				continue
 			}
-			ready, blockedBy, doomed := d.evaluateReadiness(node)
-			if doomed {
+			ready, reason, doomedStatus := d.evaluateReadiness(node)
+			if doomedStatus != "" {
 				d.mu.Lock()
-				ps.Status = state.Blocked
-				ps.BlockedBy = blockedBy
+				ps.Status = doomedStatus
+				ps.Reason = reason
 				d.mu.Unlock()
 				doneCh <- name // trigger a rescan of its own consumers
 				continue
@@ -147,17 +147,23 @@ func (d *Dispatcher) countTerminal(closure map[string]*graph.Node) int {
 // evaluateReadiness checks every edge of node against current
 // (possibly still-pending) upstream status. Returns ready=true only
 // once every edge is both terminal and satisfied, AND every When
-// precondition (if any) is met at that moment. doomed=true means
-// either an edge can never be satisfied - e.g. an on:"failure" edge
-// whose upstream succeeded - or a When precondition failed its
-// one-shot check.
+// precondition (if any) is met at that moment.
 //
-// Known limitation: "doomed because an edge condition can't be
-// satisfied", "doomed because a When precondition failed", and
-// "blocked because an upstream actually failed" are all reported as
-// state.Blocked. A real "skipped" status (distinct from "blocked") is
-// a genuine gap - flagged in CHANGELOG, not hidden.
-func (d *Dispatcher) evaluateReadiness(node *graph.Node) (ready bool, blockedBy string, doomed bool) {
+// When ready is false and doomedStatus is non-empty, this node will
+// never run - dispatch should record doomedStatus (Blocked, Skipped,
+// or Cancelled) rather than leaving it Pending forever:
+//   - Blocked: a real failure happened - either the direct upstream
+//     Failed, or it was itself Blocked (cascading a failure further
+//     up the chain).
+//   - Skipped: nothing failed. An on:"failure" edge whose upstream
+//     never actually failed (it succeeded, or was itself
+//     Skipped/Cancelled), or a when: precondition that wasn't met.
+//   - Cancelled: the upstream was Cancelled by a halt, and this node
+//     inherits that rather than being mislabeled as a failure.
+//
+// When both ready and doomedStatus are empty/false, at least one edge
+// is still pending - try again once more nodes complete.
+func (d *Dispatcher) evaluateReadiness(node *graph.Node) (ready bool, reason string, doomedStatus state.Status) {
 	d.mu.Lock()
 	allTerminal := true
 	for _, e := range node.Edges {
@@ -166,14 +172,21 @@ func (d *Dispatcher) evaluateReadiness(node *graph.Node) (ready bool, blockedBy 
 			allTerminal = false
 			continue
 		}
-		if !edgeSatisfied(e.EffectiveCondition(), up.Status) {
+		cond := e.EffectiveCondition()
+		if !edgeSatisfied(cond, up.Status) {
 			d.mu.Unlock()
-			return false, e.Puff, true
+			if cond == puff.OnFailureCond {
+				// the failure this puff was watching for never
+				// happened at that exact upstream node - nothing
+				// broke, so this is a skip, not a block.
+				return false, fmt.Sprintf("on:\"failure\" never met - %s ended %s", e.Puff, up.Status), state.Skipped
+			}
+			return false, e.Puff, state.CascadeStatus(up.Status)
 		}
 	}
 	d.mu.Unlock()
 	if !allTerminal {
-		return false, "", false
+		return false, "", ""
 	}
 
 	// Criteria evaluation can block on I/O (file reads, exec,
@@ -181,12 +194,12 @@ func (d *Dispatcher) evaluateReadiness(node *graph.Node) (ready bool, blockedBy 
 	// run while holding d.mu, or every other goroutine trying to
 	// update its own PuffState stalls behind it.
 	if len(node.Puff.When) > 0 {
-		met, reason := evaluateCriteria(d.Root.Dir, node.Puff.When)
+		met, unmetReason := evaluateCriteria(d.Root.Dir, node.Puff.When)
 		if !met {
-			return false, reason, true
+			return false, unmetReason, state.Skipped
 		}
 	}
-	return true, "", false
+	return true, "", ""
 }
 
 // evaluateCriteria checks every When precondition on node, in order,
@@ -257,7 +270,7 @@ func edgeSatisfied(cond puff.EdgeCondition, upstream state.Status) bool {
 	case puff.OnAlways:
 		return true
 	case puff.OnFailureCond:
-		return upstream == state.Failed
+		return upstream.SatisfiesFailure()
 	default: // OnSuccess
 		return upstream.SatisfiesSuccess()
 	}
@@ -313,6 +326,7 @@ func (d *Dispatcher) execute(name string, node *graph.Node) {
 	if halted && !d.isExempt(node) {
 		d.mu.Lock()
 		ps.Status = state.Cancelled
+		ps.Reason = "halt: never dispatched"
 		ps.EndedAt = time.Now()
 		d.mu.Unlock()
 		return
@@ -329,6 +343,7 @@ func (d *Dispatcher) execute(name string, node *graph.Node) {
 			d.mu.Lock()
 			ps.Attempts = append(ps.Attempts, rec)
 			ps.Status = state.Cancelled
+			ps.Reason = "halt: killed mid-execution"
 			ps.EndedAt = time.Now()
 			d.mu.Unlock()
 			return
@@ -586,7 +601,7 @@ func (d *Dispatcher) runMemberStep(parentPuff string, step puff.Step) error {
 	}
 	d.mu.Unlock()
 
-	if finalStatus == state.Failed || finalStatus == state.Blocked || finalStatus == state.Cancelled {
+	if finalStatus != state.Success && finalStatus != state.Recovered {
 		return fmt.Errorf("member %q::%q ended in status %q", step.Member, step.MemberPuff, finalStatus)
 	}
 	return nil

@@ -49,7 +49,7 @@ var runCmd = &cobra.Command{
 			return runErr
 		}
 		if final := result.Puffs[puffName]; final != nil &&
-			(final.Status == state.Failed || final.Status == state.Blocked || final.Status == state.Cancelled) {
+			final.Status != state.Success && final.Status != state.Recovered {
 			os.Exit(1)
 		}
 		return nil
@@ -61,8 +61,13 @@ func printReport(r *state.Run) {
 	fmt.Printf("%-28s %-10s %s\n", "PUFF", "STATUS", "NOTES")
 	for name, ps := range r.Puffs {
 		notes := ""
-		if ps.BlockedBy != "" {
-			notes = fmt.Sprintf("blocked by %s", ps.BlockedBy)
+		switch ps.Status {
+		case state.Blocked:
+			notes = fmt.Sprintf("blocked by %s", ps.Reason)
+		case state.Skipped:
+			notes = fmt.Sprintf("skipped: %s", ps.Reason)
+		case state.Cancelled:
+			notes = ps.Reason
 		}
 		if ps.SelfHandler != nil && ps.SelfHandler.Fired {
 			notes += fmt.Sprintf(" self_handler(recovered=%v)", ps.SelfHandler.Recovered)

@@ -6,6 +6,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `Skipped` — a genuine sixth status, distinct from `Blocked`.
+  `Blocked` now means an actual failure occurred somewhere in the
+  chain; `Skipped` means nothing failed, the puff just never ran (an
+  `on:"failure"` edge whose watched puff succeeded, a `when:`
+  precondition that wasn't met, or a cascade from an upstream puff
+  that was itself `Skipped`). Closes the conflation flagged in the
+  previous entry.
+- `state.CascadeStatus(upstream)` decides what an `on:"success"`
+  dependent inherits when upstream didn't satisfy success:
+  `Failed`/`Blocked` upstream → `Blocked` (a real failure happened);
+  `Cancelled` upstream → `Cancelled`; anything else → `Skipped`.
+- `on:"failure"` edges now also fire on a `Recovered` upstream, not
+  only `Failed` — a puff that failed and was then explicitly
+  recovered by its own self-handler still failed first, and an
+  external `on:"failure"` watcher exists to react to failures even
+  ones handled internally too.
+- `PuffState.BlockedBy` renamed to `Reason` (JSON: `blocked_by` →
+  `reason`) — it now explains `Blocked`, `Skipped`, and `Cancelled`
+  alike, not just `Blocked`.
 - `when:` external preconditions: `file_contains`, `env_set`,
   `env_equals`, `command_ok`, `port_open`. Evaluated exactly once, at
   the moment a puff's dependency edges are already satisfied and it
@@ -55,12 +74,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was also missing the `install` target.
 
 ### Known limitations
-- `evaluateReadiness` reports three different situations as the same
-  `blocked` status: "an upstream actually failed", "an edge condition
-  (e.g. `on:"failure"` when upstream succeeded) can never be
-  satisfied", and now "a `when:` precondition wasn't met." A real
-  `skipped` status is a genuine gap, not hidden — see code comment in
-  `internal/scheduler/scheduler.go`.
 - `when:` criteria evaluation happens on the main dispatch loop's scan
   (not inside a per-node goroutine), so a slow criterion (e.g.
   `port_open` against an unreachable host, up to its 2s timeout) delays

@@ -68,8 +68,8 @@ func TestRun_FailurePropagation_BlocksDownstream(t *testing.T) {
 	if r.Puffs["c"].Status != state.Blocked {
 		t.Errorf("c: want blocked, got %s", r.Puffs["c"].Status)
 	}
-	if r.Puffs["c"].BlockedBy != "b" {
-		t.Errorf("c.BlockedBy: want %q, got %q", "b", r.Puffs["c"].BlockedBy)
+	if r.Puffs["c"].Reason != "b" {
+		t.Errorf("c.Reason: want %q, got %q", "b", r.Puffs["c"].Reason)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestRun_ExternalOnFailureDependent_Fires(t *testing.T) {
 	}
 }
 
-func TestRun_OnFailureDependent_NeverFiresIfUpstreamSucceeds(t *testing.T) {
+func TestRun_OnFailureDependent_UpstreamSucceeds_EndsSkipped(t *testing.T) {
 	root := newTestRoot(t, map[string]puff.Puff{
 		"a": {Steps: []puff.Step{shell("true")}},
 		"notify": {
@@ -101,11 +101,59 @@ func TestRun_OnFailureDependent_NeverFiresIfUpstreamSucceeds(t *testing.T) {
 	})
 	r := buildAndRun(t, root, "notify")
 
-	// a succeeded, so notify's on:failure condition can never be
-	// satisfied - it should end up Blocked (the "doomed" case), not
-	// silently stuck Pending forever.
-	if r.Puffs["notify"].Status != state.Blocked {
-		t.Errorf("notify: want blocked (condition unsatisfiable), got %s", r.Puffs["notify"].Status)
+	// a succeeded - nothing failed, so notify's on:failure condition
+	// can never be satisfied. This must be Skipped, not Blocked:
+	// nothing broke, the watched-for failure simply never happened.
+	if r.Puffs["notify"].Status != state.Skipped {
+		t.Errorf("notify: want skipped (condition unsatisfiable, but nothing failed), got %s", r.Puffs["notify"].Status)
+	}
+}
+
+func TestRun_OnFailureDependent_FiresOnRecovered(t *testing.T) {
+	// A puff that failed and was then explicitly recovered by its own
+	// self-handler still failed first. An external on:"failure"
+	// watcher exists to react to failures even ones handled
+	// internally too - it should still fire.
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {
+			Steps:     []puff.Step{shell("false")},
+			OnFailure: &puff.OnFailure{Steps: []puff.Step{shell("true")}, Recover: true},
+		},
+		"notify": {
+			Steps:     []puff.Step{shell("true")},
+			DependsOn: []puff.DependsOn{{Puff: "a", Condition: puff.OnFailureCond}},
+		},
+	})
+	r := buildAndRun(t, root, "notify")
+
+	if r.Puffs["a"].Status != state.Recovered {
+		t.Fatalf("a: want recovered, got %s", r.Puffs["a"].Status)
+	}
+	if r.Puffs["notify"].Status != state.Success {
+		t.Errorf("notify: want success (on:failure should fire even though a recovered), got %s", r.Puffs["notify"].Status)
+	}
+}
+
+func TestRun_OnSuccessDependent_UpstreamSkipped_CascadesSkipped(t *testing.T) {
+	// b's on:failure condition is unsatisfiable (a succeeds) -> b ends
+	// Skipped. c depends on b for on:"success" -> c must inherit
+	// Skipped too, not be mislabeled Blocked (nothing failed anywhere
+	// in this chain).
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {Steps: []puff.Step{shell("true")}},
+		"b": {
+			Steps:     []puff.Step{shell("true")},
+			DependsOn: []puff.DependsOn{{Puff: "a", Condition: puff.OnFailureCond}},
+		},
+		"c": {Steps: []puff.Step{shell("true")}, DependsOn: []puff.DependsOn{{Puff: "b"}}},
+	})
+	r := buildAndRun(t, root, "c")
+
+	if r.Puffs["b"].Status != state.Skipped {
+		t.Fatalf("b: want skipped, got %s", r.Puffs["b"].Status)
+	}
+	if r.Puffs["c"].Status != state.Skipped {
+		t.Errorf("c: want skipped (cascaded from b, nothing failed), got %s", r.Puffs["c"].Status)
 	}
 }
 
@@ -208,7 +256,7 @@ func TestRun_When_FileContains_Met(t *testing.T) {
 	}
 }
 
-func TestRun_When_FileContains_Unmet_SkipsPuff(t *testing.T) {
+func TestRun_When_FileContains_Unmet_EndsSkipped(t *testing.T) {
 	root := newTestRoot(t, map[string]puff.Puff{
 		"a": {
 			Steps: []puff.Step{shell("true")},
@@ -221,11 +269,11 @@ func TestRun_When_FileContains_Unmet_SkipsPuff(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := buildAndRun(t, root, "a")
-	if r.Puffs["a"].Status != state.Blocked {
-		t.Fatalf("want blocked (criterion unmet), got %s", r.Puffs["a"].Status)
+	if r.Puffs["a"].Status != state.Skipped {
+		t.Fatalf("want skipped (criterion unmet, nothing failed), got %s", r.Puffs["a"].Status)
 	}
-	if r.Puffs["a"].BlockedBy == "" {
-		t.Fatal("want a human-readable reason in BlockedBy")
+	if r.Puffs["a"].Reason == "" {
+		t.Fatal("want a human-readable reason")
 	}
 }
 
@@ -239,8 +287,8 @@ func TestRun_When_FileContains_MissingFile_IsUnmetNotError(t *testing.T) {
 		},
 	})
 	r := buildAndRun(t, root, "a") // must not error out the whole run
-	if r.Puffs["a"].Status != state.Blocked {
-		t.Fatalf("want blocked, got %s", r.Puffs["a"].Status)
+	if r.Puffs["a"].Status != state.Skipped {
+		t.Fatalf("want skipped, got %s", r.Puffs["a"].Status)
 	}
 }
 
@@ -258,7 +306,7 @@ func TestRun_When_EnvSet(t *testing.T) {
 	}
 }
 
-func TestRun_When_EnvEquals_WrongValue_Blocked(t *testing.T) {
+func TestRun_When_EnvEquals_WrongValue_EndsSkipped(t *testing.T) {
 	t.Setenv("MUSHMELLOW_TEST_VAR", "wrong")
 	root := newTestRoot(t, map[string]puff.Puff{
 		"a": {
@@ -269,8 +317,8 @@ func TestRun_When_EnvEquals_WrongValue_Blocked(t *testing.T) {
 		},
 	})
 	r := buildAndRun(t, root, "a")
-	if r.Puffs["a"].Status != state.Blocked {
-		t.Fatalf("want blocked, got %s", r.Puffs["a"].Status)
+	if r.Puffs["a"].Status != state.Skipped {
+		t.Fatalf("want skipped, got %s", r.Puffs["a"].Status)
 	}
 }
 
@@ -298,8 +346,8 @@ func TestRun_When_CommandOK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r2.Puffs["false_case"].Status != state.Blocked {
-		t.Fatalf("false_case: want blocked, got %s", r2.Puffs["false_case"].Status)
+	if r2.Puffs["false_case"].Status != state.Skipped {
+		t.Fatalf("false_case: want skipped, got %s", r2.Puffs["false_case"].Status)
 	}
 }
 
@@ -323,7 +371,7 @@ func TestRun_When_PortOpen(t *testing.T) {
 	}
 }
 
-func TestRun_When_PortClosed_Blocked(t *testing.T) {
+func TestRun_When_PortClosed_EndsSkipped(t *testing.T) {
 	// Grab a port and immediately close the listener, so nothing is
 	// actually bound - a real "not reachable" case, not a guess.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -340,8 +388,8 @@ func TestRun_When_PortClosed_Blocked(t *testing.T) {
 		},
 	})
 	r := buildAndRun(t, root, "closed_port")
-	if r.Puffs["closed_port"].Status != state.Blocked {
-		t.Fatalf("want blocked (port not reachable), got %s", r.Puffs["closed_port"].Status)
+	if r.Puffs["closed_port"].Status != state.Skipped {
+		t.Fatalf("want skipped (port not reachable, nothing failed), got %s", r.Puffs["closed_port"].Status)
 	}
 }
 
@@ -357,8 +405,8 @@ func TestRun_When_NoDependencies_StillChecked(t *testing.T) {
 		},
 	})
 	r := buildAndRun(t, root, "a")
-	if r.Puffs["a"].Status != state.Blocked {
-		t.Fatalf("want blocked - when: must be checked even with no depends_on, got %s", r.Puffs["a"].Status)
+	if r.Puffs["a"].Status != state.Skipped {
+		t.Fatalf("want skipped - when: must be checked even with no depends_on, got %s", r.Puffs["a"].Status)
 	}
 }
 
@@ -409,5 +457,65 @@ func TestRun_MemberCall_FailurePropagatesToParent(t *testing.T) {
 	}
 	if len(r.Puffs["build"].MemberCalls) != 1 || r.Puffs["build"].MemberCalls[0].Status != state.Failed {
 		t.Fatalf("want member call recorded as failed, got %+v", r.Puffs["build"].MemberCalls)
+	}
+}
+
+func TestRun_Halt_FailedDependencyStillBlocked_NotCancelled(t *testing.T) {
+	// b is blocked because its own dependency (a) actually failed -
+	// that's ordinary blocking and has nothing to do with halt mode.
+	// Halt only changes what happens to *independent* puffs that
+	// would otherwise keep running; it doesn't relabel a real
+	// dependency failure as a cancellation.
+	root := newTestRoot(t, map[string]puff.Puff{
+		"a": {Steps: []puff.Step{shell("false")}},
+		"b": {Steps: []puff.Step{shell("true")}, DependsOn: []puff.DependsOn{{Puff: "a"}}},
+	})
+	root.OnFailure = workspace.Halt
+
+	r := buildAndRun(t, root, "b")
+
+	if r.Puffs["a"].Status != state.Failed {
+		t.Fatalf("a: want failed, got %s", r.Puffs["a"].Status)
+	}
+	if r.Puffs["b"].Status != state.Blocked {
+		t.Fatalf("b: want blocked (its own dependency failed, unrelated to halt), got %s", r.Puffs["b"].Status)
+	}
+}
+
+func TestExecute_Halted_CancelsIndependentPuff(t *testing.T) {
+	// White-box test of the actual halt mechanism: a puff with no
+	// failed dependency of its own, but caught by halt before it got
+	// a chance to run, should be marked Cancelled - not run, and not
+	// mislabeled as Blocked/Failed. Driven directly at the execute()
+	// level since deterministically racing real concurrent dispatch
+	// against a halt trigger would be flaky.
+	root := newTestRoot(t, map[string]puff.Puff{
+		"c": {Steps: []puff.Step{shell("true")}},
+	})
+	g, err := graph.Build(root)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	closure, err := g.Closure("c")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := New(root, g)
+	d.closure = closure
+	d.State = &state.Run{
+		RunID: "test",
+		Puffs: map[string]*state.PuffState{"c": {Status: state.Pending}},
+	}
+	d.pools = map[string]chan struct{}{"mushmellow": make(chan struct{}, 1)}
+	d.halted = true // simulate halt already in effect before c ever dispatched
+
+	d.execute("c", closure["c"])
+
+	if d.State.Puffs["c"].Status != state.Cancelled {
+		t.Fatalf("want cancelled, got %s", d.State.Puffs["c"].Status)
+	}
+	if d.State.Puffs["c"].Reason == "" {
+		t.Fatal("want a reason explaining the cancellation")
 	}
 }
